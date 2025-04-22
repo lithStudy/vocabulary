@@ -16,7 +16,11 @@ class WordRepository {
             rootInfo = "abs- (away) + esse (be)",
             synonyms = listOf("lack", "nonattendance"),
             antonyms = listOf("presence", "attendance"),
-            audioResId = R.raw.word_absence
+            audioResId = R.raw.word_absence,
+            phrases = listOf(
+                "in the absence of" to "在缺乏...的情况下",
+                "leave of absence" to "准假；休假"
+            )
         ),
         Word(
             id = 2,
@@ -27,7 +31,11 @@ class WordRepository {
             rootInfo = "com- (together) + ponere (put)",
             synonyms = listOf("create", "constitute", "calm"),
             antonyms = listOf("decompose", "agitate"),
-            audioResId = R.raw.word_absence
+            audioResId = R.raw.word_vocabulary,
+            phrases = listOf(
+                "be composed of" to "由...组成",
+                "compose music/poetry" to "作曲/作诗"
+            )
         ),
         Word(
             id = 3,
@@ -37,7 +45,11 @@ class WordRepository {
             sentences = listOf("Reading helps to expand your vocabulary.", "This technical vocabulary is hard to master."),
             rootInfo = "vox (voice) -> vocare (call) -> vocabulum (word)",
             synonyms = listOf("lexicon", "word list"),
-            audioResId = R.raw.word_vocabulary
+            audioResId = R.raw.word_vocabulary,
+            phrases = listOf(
+                "expand one's vocabulary" to "扩大词汇量",
+                "limited vocabulary" to "有限的词汇量"
+            )
         ),
         // --- 添加更多示例单词以满足批次需求 ---
         Word(id = 4, word = "ubiquitous", phonetic = "/juːˈbɪkwɪtəs/", meaning = "adj. 无所不在的", audioResId = R.raw.word_absence), // 假设有对应音频

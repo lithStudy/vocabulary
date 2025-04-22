@@ -1,0 +1,52 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Vocabulary App Structure and Logic
+
+This rule outlines the key components and core logic of the Wear OS Vocabulary learning application.
+
+## Architecture
+
+The application follows the MVVM (Model-View-ViewModel) architecture:
+
+-   **Model:** Represented by the `Word` data class in [`domain/model/Word.kt`](mdc:app/src/main/java/com/example/vocabulary/domain/model/Word.kt) and potentially managed by `WordRepository`.
+-   **View:** Implemented using Jetpack Compose within [`presentation/MainActivity.kt`](mdc:app/src/main/java/com/example/vocabulary/presentation/MainActivity.kt). It observes the ViewModel's state.
+-   **ViewModel:** [`presentation/VocabularyViewModel.kt`](mdc:app/src/main/java/com/example/vocabulary/presentation/VocabularyViewModel.kt) holds the UI state (`VocabularyUiState`) via `StateFlow` and contains the core business logic.
+
+## Key Files and Components
+
+-   **[`presentation/MainActivity.kt`](mdc:app/src/main/java/com/example/vocabulary/presentation/MainActivity.kt):**
+    -   The main activity and entry point.
+    -   Sets up the Compose UI (`VocabularyApp`, `WordCard`, `SentenceCard`, etc.).
+    -   Handles gesture detection (`detectDragGestures`) and delegates actions to the ViewModel (`onNextWord`, `onPreviousWord`, `onRemembered`, etc.).
+-   **[`presentation/VocabularyViewModel.kt`](mdc:app/src/main/java/com/example/vocabulary/presentation/VocabularyViewModel.kt):**
+    -   Manages the application's state (`VocabularyUiState`).
+    -   Handles core logic:
+        -   Loading word batches (`loadNextBatch`, mixing review/new words).
+        -   Tracking batch memory levels (`batchMemoryState`, `requiredMemoryLevel`).
+        -   Calculating review intervals (`calculateNextInterval`).
+        -   Updating word state via `WordRepository`.
+        -   Handling user interactions:
+            -   `wordRemembered()`: Increases memory level, navigates forward (skipping completed).
+            -   `wordForgotten()`: Resets memory level, stays on the current word.
+            -   `nextWord()` (Left Swipe): Increases memory level of the *current* word, navigates forward (skipping completed).
+            -   `previousWord()` (Right Swipe): Navigates backward (not skipping), decreases memory level of the *arrived* word.
+            -   Navigation between screens (`navigateToScreen`, `nextSentence`, `previousSentence`).
+-   **[`data/WordRepository.kt`](mdc:app/src/main/java/com/example/vocabulary/data/WordRepository.kt):**
+    -   Provides access to word data. Currently uses an in-memory list, but designed to be replaceable with a database.
+    -   Contains methods like `getWords()` and `updateWordState()`.
+-   **[`domain/model/Word.kt`](mdc:app/src/main/java/com/example/vocabulary/domain/model/Word.kt):**
+    -   Data class representing a vocabulary word, including its properties (`word`, `meaning`, `phonetic`, `audioResId`, `sentences`, `rootInfo`, `phrases`) and learning state (`isLearned`, `nextReviewDate`, etc.).
+-   **[`README.md`](mdc:README.md):**
+    -   Contains project overview, features, setup instructions, and usage guide.
+
+## Core Concepts
+
+-   **Batch System:** Words are processed in batches, mixing review and new words.
+-   **Memory Level:** Each word has a temporary memory level (0-4) within a batch, tracked in `VocabularyUiState.batchMemoryState`.
+-   **Word Completion:** A word is considered 'completed' in a batch when its memory level reaches `requiredMemoryLevel` (currently 4).
+-   **Navigation:** Left swipe/Remember button generally move to the *next uncompleted* word. Right swipe moves to the *previous* word regardless of completion status.
+-   **State Management:** UI state is managed reactively using `StateFlow` in the `VocabularyViewModel`.
+

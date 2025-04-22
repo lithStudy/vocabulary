@@ -1,44 +1,89 @@
-# Wear OS 词汇学习应用 (Vocabulary App)
+# Wear OS 词汇记忆应用
 
-一个简单的 Wear OS 应用程序，旨在帮助用户在手表上学习和复习词汇。
+这是一个基于 Wear OS 的智能词汇记忆应用程序，利用 Jetpack Compose 构建界面，旨在帮助用户高效记忆单词。
 
-## 功能
+## 主要功能
 
-*   **单词卡片展示**: 以卡片形式清晰地显示单词、音标和中文释义。
-*   **手势切换**: 支持通过左右滑动屏幕来切换上一个或下一个单词，提供流畅的浏览体验。
-*   **环境模式 (Ambient Mode) 兼容**: 优化了在手表进入低功耗环境模式时的显示，仅保留核心信息（单词本身），节省电量。
-*   **基础架构**: 使用现代 Android 开发技术构建，包括 Kotlin 和 Jetpack Compose for Wear OS。
-
-## 截图/演示
-
-*(在此处可以添加应用的截图或 GIF 动图来展示界面和交互)*
-
-## 设置与运行
-
-1.  **克隆仓库**:
-    ```bash
-    git clone <your-repository-url>
-    cd vocabulary
-    ```
-2.  **打开项目**: 使用 Android Studio (最新稳定版或 Canary 版，确保支持 Compose for Wear OS) 打开项目根目录。
-3.  **同步 Gradle**: 等待 Android Studio 自动同步 Gradle 依赖。如果遇到依赖问题（如此前解决的 `wear-ambient` 问题），请确保所有依赖库版本兼容且仓库配置正确。
-4.  **运行应用**:
-    *   连接一个 Wear OS 设备（物理设备或模拟器）。
-    *   在 Android Studio 中选择 `app` 模块和目标设备。
-    *   点击运行按钮 (▶️)。
+*   **批次学习系统:**
+    *   将单词分为多个批次进行学习和复习。
+    *   智能混合需要复习的单词和新的未学习单词组成记忆批次（目标最多 40 个：20 复习 + 20 新词）。
+*   **艾宾浩斯复习计划:**
+    *   基于简化的艾宾浩斯遗忘曲线，自动计算并安排单词的复习时间。
+    *   优先复习到期的单词。
+*   **批次内记忆度:**
+    *   跟踪每个单词在当前学习批次中的记忆熟练度（0 到 4 级）。
+    *   通过交互（点击按钮或滑动）动态更新记忆度。
+*   **动态 UI 反馈:**
+    *   当单词记忆度达到 3 级时，自动隐藏中文释义，鼓励用户主动回忆。
+    *   界面上显示清晰的记忆等级指示器（圆点）。
+*   **多维信息展示:**
+    *   **下滑:** 查看单词相关例句 (支持左右滑动切换多条例句)。
+    *   **上滑:** 查看单词的词根词缀信息。
+    *   **词根页左滑:** 查看包含该单词的常见词组及其释义。
+*   **直观交互:**
+    *   **主界面左右滑动:**
+        *   **左滑 (下一个):** 将**当前单词**记忆度 +1，然后导航到下一个**未完成**的单词。
+        *   **右滑 (上一个):** 导航到列表中的**前一个单词**（不跳过已完成的），然后将**这个到达的单词**记忆度 -1（如果大于 0）。
+    *   **例句界面左右滑动:** 切换上一句/下一句。
+    *   **词根界面左滑:** 导航到词组界面。
+    *   **词组界面右滑:** 导航回词根界面。
+    *   **词根/词组/例句界面上下滑动:** 返回单词主界面。
+    *   **按钮操作:** 提供明确的"记住了"和"忘记了"按钮。
+        *   点击"记住了" (✓): 将当前单词记忆度 +1，然后导航到下一个**未完成**的单词 (效果类似左滑)。
+        *   点击"忘记了" (✗): 将当前单词记忆度清零，并**停留在当前单词**。
+    *   单词在本批次记忆度达到 4 后将不再出现在学习流中（左滑和"记住了"按钮会跳过），直到下一个复习周期。
+*   **单词发音:** 点击单词旁边的发音图标可播放对应的 MP3 音频。
+*   **批次完成提示:** 当前批次所有单词都记忆完成后，会显示提示并提供按钮开始下一批。
 
 ## 技术栈
 
-*   **语言**: [Kotlin](https://kotlinlang.org/)
-*   **UI**: [Jetpack Compose for Wear OS](https://developer.android.com/jetpack/compose/wear)
-*   **架构**: 基于 MVVM 思想 (虽然简单应用中未完全体现)
-*   **构建系统**: [Gradle](https://gradle.org/)
-*   **核心库**:
-    *   `androidx.wear.compose.material`: Wear OS 的 Material Design 组件。
-    *   `androidx.wear.compose.foundation`: Wear OS 的基础布局和手势。
-    *   `androidx.activity.compose`: Activity 与 Compose 的集成。
-    *   `androidx.wear.ambient`: (旧版，已移除) 处理环境模式。
-    *   `androidx.wear`: 提供 Wear OS 特定功能，如 `AmbientModeSupport`。
+*   **语言:** Kotlin
+*   **UI:** Jetpack Compose for Wear OS
+*   **架构:** MVVM (Model-View-ViewModel)
+    *   `ViewModel`: 使用 `androidx.lifecycle.ViewModel` 管理 UI 状态和业务逻辑。
+    *   `StateFlow`: 用于从 ViewModel 向 UI 公开状态。
+*   **数据管理:**
+    *   `WordRepository`: 提供单词数据（当前为内存模拟，未来可扩展至数据库）。
+    *   `Word` Data Class: 包含单词信息及记忆状态字段 (`isLearned`, `nextReviewDate`, `phrases` 等)。
+*   **音频:** Android `MediaPlayer`
+*   **构建:** Gradle with Kotlin DSL (`build.gradle.kts`)
+
+## 设置与运行
+
+1.  **克隆仓库:**
+    ```bash
+    git clone <repository-url>
+    cd vocabulary
+    ```
+2.  **打开项目:** 使用 Android Studio 打开项目根目录 (`vocabulary`)。
+3.  **同步 Gradle:** 等待 Android Studio 完成 Gradle 同步。
+4.  **准备音频文件:**
+    *   确保 `app/src/main/res/raw/` 目录下有对应的 MP3 音频文件。
+    *   文件名必须符合 Android 资源命名规范（小写字母、数字、下划线），且不能是 Java/Kotlin 关键字（例如 `break` 不行）。
+    *   脚本 `ttt.ps1` (或类似名称的脚本) 可用于批量重命名文件并添加 `word_` 前缀。
+    *   在 `app/src/main/java/com/example/vocabulary/data/WordRepository.kt` 中将单词与正确的 `R.raw.word_...` ID 关联起来。
+5.  **运行应用:**
+    *   选择一个 Wear OS 模拟器或连接一个 Wear OS 设备。
+    *   点击 Android Studio 工具栏中的运行按钮 (▶)。
+
+## 使用说明
+
+1.  应用启动后会加载第一个学习批次，显示单词主界面。
+2.  界面中央显示当前单词、音标、记忆等级指示器和释义（可能隐藏）。
+3.  **操作：**
+    *   **主界面左滑:** 将**当前单词**记忆度 +1，然后导航到下一个**未完成**的单词。
+    *   **主界面右滑:** 导航到列表中的**前一个单词**（不跳过已完成的），然后将**这个刚显示的单词**记忆度 -1（如果大于 0）。
+    *   **主界面上滑:** 查看当前单词的词根词缀信息。
+    *   **主界面下滑:** 查看当前单词的例句。
+    *   **例句界面左右滑动:** 切换不同的例句。
+    *   **词根界面左滑:** 查看当前单词的常见词组及释义。
+    *   **词组界面右滑:** 返回词根界面。
+    *   **从例句/词根/词组界面上滑或下滑:** 返回单词主界面。
+    *   **点击绿色对勾按钮 (✓):** 将当前单词记忆度 +1，然后导航到下一个**未完成**的单词。
+    *   **点击红色叉号按钮 (✗):** 将当前单词记忆度清零，并**停留在当前单词**。
+    *   **点击音量图标:** 播放单词发音（如果提供了音频文件）。
+4.  当批次内所有单词记忆度都达到 4 时，会显示"批次完成"信息。
+5.  点击"开始下一批"按钮，应用将加载包含复习词和新词的新批次。
 
 ## 项目结构 (简要)
 
@@ -50,8 +95,8 @@
 │   │   ├── java/com/example/vocabulary/
 │   │   │   ├── data/         # 数据层 (例如 WordRepository)
 │   │   │   ├── domain/       # 领域层 (例如 Word 模型)
-│   │   │   └── presentation/ # 表示层 (Activity, Composables, Theme)
-│   │   └── res/              # 资源文件 (图标、布局等)
+│   │   │   └── presentation/ # 表示层 (Activity, Composables, ViewModel, Theme)
+│   │   └── res/              # 资源文件 (音频、图标等)
 │   └── ...
 ├── gradle/                   # Gradle Wrapper 和版本目录
 │   └── libs.versions.toml    # 依赖库版本管理

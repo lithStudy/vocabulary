@@ -14,6 +14,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Check // For Remembered button
@@ -62,7 +65,10 @@ class MainActivity : ComponentActivity() {
                     onPreviousWord = vocabularyViewModel::previousWord,
                     onRemembered = vocabularyViewModel::wordRemembered,
                     onForgotten = vocabularyViewModel::wordForgotten,
-                    onStartNextBatch = vocabularyViewModel::startNextBatch
+                    onStartNextBatch = vocabularyViewModel::startNextBatch,
+                    onNavigateToScreen = vocabularyViewModel::navigateToScreen,
+                    onNextSentence = vocabularyViewModel::nextSentence,
+                    onPreviousSentence = vocabularyViewModel::previousSentence
                 )
             }
         }
@@ -82,6 +88,9 @@ class MainActivity : ComponentActivity() {
  * @param onRemembered 处理"记住了"事件的回调。
  * @param onForgotten 处理"忘记了"事件的回调。
  * @param onStartNextBatch 处理"开始下一批"事件的回调。
+ * @param onNavigateToScreen 处理切换屏幕的事件回调。
+ * @param onNextSentence 处理下一个例句事件的回调。
+ * @param onPreviousSentence 处理上一个例句事件的回调。
  */
 @Composable
 fun VocabularyApp(
@@ -90,7 +99,10 @@ fun VocabularyApp(
     onPreviousWord: () -> Unit,
     onRemembered: () -> Unit,
     onForgotten: () -> Unit,
-    onStartNextBatch: () -> Unit
+    onStartNextBatch: () -> Unit,
+    onNavigateToScreen: (Screen) -> Unit,
+    onNextSentence: () -> Unit,
+    onPreviousSentence: () -> Unit
 ) {
     // --- MediaPlayer 相关 (Kept similar for now, can be refactored) ---
     val context = LocalContext.current
@@ -166,44 +178,91 @@ fun VocabularyApp(
                     }
                  }
             }
-            // 正常显示单词卡片
+            // 正常显示内容 (根据当前屏幕决定)
             uiState.currentWord != null -> {
-                // --- 手势处理 (Simplified for batch navigation) ---
+                // --- 手势处理 (恢复垂直滑动) ---
                 var dragAmountX by remember { mutableStateOf(0f) }
-                // Key change restarts gesture detection
+                var dragAmountY by remember { mutableStateOf(0f) }
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(uiState.currentWordInBatchIndex) { // Re-key on word change
+                        // Key by current word AND screen to reset gestures correctly
+                        .pointerInput(uiState.currentWordInBatchIndex, uiState.currentScreen) {
                             detectDragGestures(
-                                onDragStart = { dragAmountX = 0f },
+                                onDragStart = { dragAmountX = 0f; dragAmountY = 0f },
                                 onDragEnd = {
+                                    val absX = abs(dragAmountX)
+                                    val absY = abs(dragAmountY)
                                     val dragThreshold = 75f
-                                    if (abs(dragAmountX) > dragThreshold) {
-                                        if (dragAmountX < -dragThreshold) { // Left swipe
-                                            onNextWord()
-                                        } else if (dragAmountX > dragThreshold) { // Right swipe
-                                            onRemembered()
+
+                                    if (absX > absY) { // 水平滑动为主
+                                        if (dragAmountX < -dragThreshold) { // 左滑
+                                            when (uiState.currentScreen) {
+                                                is Screen.WordScreen -> onPreviousWord() // 修改：左滑切换到上一个单词
+                                                is Screen.SentencesScreen -> onNextSentence()
+                                                is Screen.RootScreen -> onNavigateToScreen(Screen.PhrasesScreen) // 从词根左滑到词组
+                                                else -> {} // 词组页面等暂时不支持左滑
+                                            }
+                                        } else if (dragAmountX > dragThreshold) { // 右滑
+                                             when (uiState.currentScreen) {
+                                                is Screen.WordScreen -> onNextWord() // 修改：右滑切换到下一个单词
+                                                is Screen.SentencesScreen -> onPreviousSentence()
+                                                is Screen.PhrasesScreen -> onNavigateToScreen(Screen.RootScreen) // 从词组右滑回词根
+                                                else -> {} // 根屏幕等暂时不支持右滑
+                                            }
+                                        }
+                                    } else { // 垂直滑动为主
+                                         if (dragAmountY < -dragThreshold) { // 上滑
+                                            when (uiState.currentScreen) {
+                                                is Screen.WordScreen -> onNavigateToScreen(Screen.RootScreen) // 从单词上滑到词根
+                                                else -> onNavigateToScreen(Screen.WordScreen) // 其他屏幕上滑返回单词主页
+                                            }
+                                        } else if (dragAmountY > dragThreshold) { // 下滑
+                                             when (uiState.currentScreen) {
+                                                is Screen.WordScreen -> onNavigateToScreen(Screen.SentencesScreen(0)) // 下滑到第一条例句
+                                                else -> onNavigateToScreen(Screen.WordScreen) // 其他屏幕下滑返回单词主页
+                                            }
                                         }
                                     }
-                                    dragAmountX = 0f // Reset drag amount
+                                    // 重置拖动距离
+                                    dragAmountX = 0f
+                                    dragAmountY = 0f
                                 },
                                 onDrag = { change, drag ->
-                                    // Only accumulate horizontal drag
+                                    // 累积拖动距离
                                     dragAmountX += drag.x
+                                    dragAmountY += drag.y
                                     change.consume()
                                 }
                             )
                         },
-                    contentAlignment = Alignment.Center // Center the WordCard within the gesture Box
+                    contentAlignment = Alignment.Center
                 ) {
-                    WordCard(
-                        word = uiState.currentWord,
-                        isMeaningHidden = uiState.isCurrentWordMeaningHidden,
-                        playWordAudio = playWordAudio,
-                        onRemembered = onRemembered,
-                        onForgotten = onForgotten
-                    )
+                    // --- 根据当前屏幕显示不同的 Card --- 
+                    when (val screen = uiState.currentScreen) {
+                        is Screen.WordScreen -> {
+                            WordCard(
+                                word = uiState.currentWord,
+                                isMeaningHidden = uiState.isCurrentWordMeaningHidden,
+                                playWordAudio = playWordAudio,
+                                onRemembered = onRemembered,
+                                onForgotten = onForgotten,
+                                memoryLevel = uiState.currentWordMemoryLevel
+                            )
+                        }
+                        is Screen.SentencesScreen -> {
+                            SentenceCard(
+                                sentences = uiState.currentWord?.sentences ?: emptyList(), // Safe call
+                                currentIndex = screen.sentenceIndex
+                            )
+                        }
+                        is Screen.RootScreen -> { // 恢复 RootScreen
+                            RootCard(rootInfo = uiState.currentWord?.rootInfo) // 只传递 rootInfo
+                        }
+                        is Screen.PhrasesScreen -> { // 新增：处理词组屏幕
+                            PhrasesCard(phrases = uiState.currentWord?.phrases)
+                        }
+                    }
                 }
             }
             // 无单词可显示（初始状态或异常）
@@ -222,6 +281,7 @@ fun VocabularyApp(
  * @param playWordAudio 播放音频的回调函数。
  * @param onRemembered "记住了"按钮点击的回调。
  * @param onForgotten "忘记了"按钮点击的回调。
+ * @param memoryLevel 当前单词的批次记忆等级。
  */
 @Composable
 fun WordCard(
@@ -229,7 +289,8 @@ fun WordCard(
     isMeaningHidden: Boolean,
     playWordAudio: (Int?) -> Unit,
     onRemembered: () -> Unit,
-    onForgotten: () -> Unit
+    onForgotten: () -> Unit,
+    memoryLevel: Int
 ) {
     if (word == null) {
         // Handle null case, maybe show a placeholder or nothing
@@ -272,7 +333,7 @@ fun WordCard(
         Spacer(modifier = Modifier.height(12.dp)) // Increased spacing
 
         // Meaning Section (Conditional Visibility)
-        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) { // Allow meaning to take up space
+        Box(modifier = Modifier.weight(1f).padding(bottom = 8.dp), contentAlignment = Alignment.Center) { // Allow meaning to take up space, add padding bottom
             if (!isMeaningHidden) {
                 Text(
                     text = word.meaning,
@@ -289,9 +350,11 @@ fun WordCard(
             }
         }
 
+        // Memory Level Indicator
+        MemoryLevelIndicator(currentLevel = memoryLevel, maxLevel = 4) // Use maxLevel = 4 as defined in ViewModel
+        Spacer(modifier = Modifier.height(12.dp)) // Spacing before buttons
 
         // Action Buttons Section
-        Spacer(modifier = Modifier.height(12.dp)) // Increased spacing
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly, // Space out buttons
@@ -324,6 +387,134 @@ fun WordCard(
     }
 }
 
+/**
+ * 显示记忆等级的指示器。
+ * @param currentLevel 当前达到的等级。
+ * @param maxLevel 总共的等级数。
+ * @param modifier Modifier。
+ * @param achievedColor 达到等级的颜色。
+ * @param unachievedColor 未达到等级的颜色。
+ */
+@Composable
+fun MemoryLevelIndicator(
+    currentLevel: Int,
+    maxLevel: Int,
+    modifier: Modifier = Modifier,
+    achievedColor: Color = MaterialTheme.colors.primary,
+    unachievedColor: Color = MaterialTheme.colors.onSurface.copy(alpha = 0.2f)
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // 从 1 到 maxLevel 创建圆点
+        for (level in 1..maxLevel) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp) // 圆点大小
+                    .background(
+                        color = if (level <= currentLevel) achievedColor else unachievedColor,
+                        shape = CircleShape
+                    )
+            )
+            // 在圆点之间添加间距，除了最后一个
+            if (level < maxLevel) {
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+        }
+    }
+}
+
+/** 显示例句，并允许左右滑动切换的卡片 */
+@Composable
+fun SentenceCard(sentences: List<String>, currentIndex: Int) {
+     Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier.fillMaxSize().padding(16.dp)
+    ) {
+        // 显示标题，如果有多条例句则显示索引
+        val title = if (sentences.size > 1) {
+            "例句 ${currentIndex + 1}/${sentences.size}"
+        } else {
+            "例句"
+        }
+        Text(title, style = MaterialTheme.typography.caption1)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 显示当前例句或提示
+        if (sentences.isNotEmpty() && currentIndex >= 0 && currentIndex < sentences.size) {
+             Text(
+                text = sentences[currentIndex],
+                style = MaterialTheme.typography.body1,
+                textAlign = TextAlign.Center
+            )
+        } else {
+            Text("暂无例句", style = MaterialTheme.typography.body1)
+        }
+        // 可以在这里添加视觉提示，表明可以左右滑动切换例句，上下滑动返回
+    }
+}
+
+/** 显示词根词缀信息的卡片 */
+@Composable
+fun RootCard(rootInfo: String?) { // 恢复为只接收 rootInfo
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+         verticalArrangement = Arrangement.Center // 居中显示
+    ) {
+        Text("词根词缀", style = MaterialTheme.typography.caption1)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = rootInfo ?: "暂无词根信息",
+            style = MaterialTheme.typography.body1,
+            textAlign = TextAlign.Center
+        )
+         // 可以在这里添加视觉提示，表明可以左滑查看词组，上下滑动返回
+    }
+}
+
+/** 显示词组列表的卡片 */
+@Composable
+fun PhrasesCard(phrases: List<Pair<String, String>>?) {
+    val scrollState = rememberScrollState()
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("常见词组", style = MaterialTheme.typography.caption1)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (phrases?.isNotEmpty() == true) {
+            phrases.forEach { (phrase, meaning) ->
+                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = phrase,
+                        style = MaterialTheme.typography.body2,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = meaning,
+                        style = MaterialTheme.typography.caption1.copy(color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)),
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+            }
+        } else {
+            Text("暂无常见词组", style = MaterialTheme.typography.body1)
+        }
+         // 可以在这里添加视觉提示，表明可以右滑返回词根，上下滑动返回
+    }
+}
+
 // --- Preview (Updated for new WordCard signature) ---
 @Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true)
 @Composable
@@ -342,7 +533,8 @@ fun DefaultPreview() {
             isMeaningHidden = false, // Preview with meaning shown
             playWordAudio = {}, // No-op for preview
             onRemembered = {}, // Provide empty lambdas for preview
-            onForgotten = {}
+            onForgotten = {},
+            memoryLevel = 2 // Preview with level 2
         )
     }
 }

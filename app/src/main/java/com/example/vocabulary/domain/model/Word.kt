@@ -18,6 +18,7 @@ import androidx.annotation.RawRes
  * @param nextReviewDate 下次应复习的时间戳。
  * @param reviewIntervalDays 当前复习间隔（天）。
  * @param consecutiveCorrect 连续答对次数（可用于动态调整间隔）。
+ * @param phrases 词组列表 <词组, 释义>
  */
 data class Word(
     val id: Int, // 添加一个唯一ID，方便管理
@@ -33,5 +34,6 @@ data class Word(
     var lastReviewDate: Long = 0L,
     var nextReviewDate: Long = 0L,
     var reviewIntervalDays: Int = 1, // 初始间隔设为1天
-    var consecutiveCorrect: Int = 0
+    var consecutiveCorrect: Int = 0,
+    val phrases: List<Pair<String, String>> = emptyList() // 新增：词组列表 <词组, 释义>
 ) 
