@@ -37,19 +37,40 @@ import com.example.vocabulary.R
 import com.example.vocabulary.domain.model.Word
 import com.example.vocabulary.presentation.theme.VocabularyTheme
 import kotlin.math.abs
+import androidx.wear.ambient.AmbientLifecycleObserver // 导入微光模式生命周期观察器
 
 // Screen sealed class is no longer needed here as ViewModel manages the main state
 
 class MainActivity : ComponentActivity() {
-    // Ambient mode handling can be kept or integrated into ViewModel later
-    // private var isAmbient by mutableStateOf(false)
-    // private val executor = Executors.newSingleThreadExecutor() // Likely not needed directly if Ambient logic moves
+    // 声明微光模式变量和观察器
+    private var isAmbient by mutableStateOf(false)
+    private lateinit var ambientLifecycleObserver: AmbientLifecycleObserver
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Ambient observer initialization - Keep for now, might need adjustments
-        // lifecycle.addObserver(AmbientLifecycleObserver(...))
+        // 初始化微光模式观察器
+        ambientLifecycleObserver = AmbientLifecycleObserver(this, object : AmbientLifecycleObserver.AmbientLifecycleCallback {
+            override fun onEnterAmbient(ambientDetails: AmbientLifecycleObserver.AmbientDetails) {
+                // 进入微光模式
+                isAmbient = true
+                Log.d("AmbientMode", "已进入微光模式")
+            }
+
+            override fun onExitAmbient() {
+                // 退出微光模式
+                isAmbient = false
+                Log.d("AmbientMode", "已退出微光模式")
+            }
+
+            override fun onUpdateAmbient() {
+                // 微光模式更新 - 通常在这里可以更新时间等关键信息
+                Log.d("AmbientMode", "微光模式更新")
+            }
+        })
+
+        // 注册微光模式观察器
+        lifecycle.addObserver(ambientLifecycleObserver)
 
         setContent {
             VocabularyTheme {
@@ -58,9 +79,10 @@ class MainActivity : ComponentActivity() {
                 // Collect UI state
                 val uiState by vocabularyViewModel.uiState.collectAsState()
 
-                // Pass state and event handlers to the main App Composable
+                // 将微光模式状态传递给 VocabularyApp
                 VocabularyApp(
                     uiState = uiState,
+                    isAmbient = isAmbient,
                     onNextWord = vocabularyViewModel::nextWord,
                     onPreviousWord = vocabularyViewModel::previousWord,
                     onRemembered = vocabularyViewModel::wordRemembered,
@@ -74,8 +96,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // onDestroy logic for executor might need adjustment if executor is removed
-    // override fun onDestroy() { ... }
+    override fun onDestroy() {
+        super.onDestroy()
+        // 移除微光模式观察器
+        lifecycle.removeObserver(ambientLifecycleObserver)
+    }
 }
 
 /**
@@ -83,6 +108,7 @@ class MainActivity : ComponentActivity() {
  * 主要负责显示加载状态、错误状态或单词内容。
  *
  * @param uiState 当前的 UI 状态。
+ * @param isAmbient 当前是否处于微光模式。
  * @param onNextWord 处理下一个单词事件的回调。
  * @param onPreviousWord 处理上一个单词事件的回调。
  * @param onRemembered 处理"记住了"事件的回调。
@@ -95,6 +121,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun VocabularyApp(
     uiState: VocabularyUiState,
+    isAmbient: Boolean,
     onNextWord: () -> Unit,
     onPreviousWord: () -> Unit,
     onRemembered: () -> Unit,
@@ -118,7 +145,8 @@ fun VocabularyApp(
     }
 
     val playWordAudio: (Int?) -> Unit = { audioResId ->
-        if (audioResId != null) {
+        // 在微光模式下不播放音频
+        if (!isAmbient && audioResId != null) {
             mediaPlayer?.release() // Release previous player first
             mediaPlayer = null
             Log.d("MediaPlayer", "Previous player released before new playback")
@@ -143,7 +171,7 @@ fun VocabularyApp(
                 mediaPlayer = null
             }
         } else {
-            Log.w("MediaPlayer", "Audio resource ID is null, skipping playback")
+            Log.w("MediaPlayer", "Audio not played in ambient mode or resource ID is null")
         }
     }
     // --- End MediaPlayer ---
@@ -154,121 +182,179 @@ fun VocabularyApp(
             .background(MaterialTheme.colors.background),
         contentAlignment = Alignment.Center
     ) {
-        when {
-            // 加载状态
-            uiState.isLoading -> {
-                CircularProgressIndicator()
-            }
-            // 错误状态
-            uiState.error != null -> {
-                Text("Error: ${uiState.error}", color = MaterialTheme.colors.error)
-            }
-            // 批次完成状态
-            uiState.isBatchComplete -> {
-                 Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxSize().padding(16.dp)
-                 ) {
-                    Text("当前批次已完成！", style = MaterialTheme.typography.title3, textAlign = TextAlign.Center)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    // 添加按钮以开始下一批次
-                    Button(onClick = onStartNextBatch) { // Use the passed callback
-                        Text("开始下一批")
-                    }
-                 }
-            }
-            // 正常显示内容 (根据当前屏幕决定)
-            uiState.currentWord != null -> {
-                // --- 手势处理 (恢复垂直滑动) ---
-                var dragAmountX by remember { mutableStateOf(0f) }
-                var dragAmountY by remember { mutableStateOf(0f) }
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        // Key by current word AND screen to reset gestures correctly
-                        .pointerInput(uiState.currentWordInBatchIndex, uiState.currentScreen) {
-                            detectDragGestures(
-                                onDragStart = { dragAmountX = 0f; dragAmountY = 0f },
-                                onDragEnd = {
-                                    val absX = abs(dragAmountX)
-                                    val absY = abs(dragAmountY)
-                                    val dragThreshold = 75f
+        // 首先检查是否处于微光模式
+        if (isAmbient) {
+            // 微光模式下的简化界面
+            AmbientModeScreen(currentWord = uiState.currentWord)
+        } else {
+            // 正常模式的完整界面
+            when {
+                // 加载状态
+                uiState.isLoading -> {
+                    CircularProgressIndicator()
+                }
+                // 错误状态
+                uiState.error != null -> {
+                    Text("Error: ${uiState.error}", color = MaterialTheme.colors.error)
+                }
+                // 批次完成状态
+                uiState.isBatchComplete -> {
+                     Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxSize().padding(16.dp)
+                     ) {
+                        Text("当前批次已完成！", style = MaterialTheme.typography.title3, textAlign = TextAlign.Center)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        // 添加按钮以开始下一批次
+                        Button(onClick = onStartNextBatch) { // Use the passed callback
+                            Text("开始下一批")
+                        }
+                     }
+                }
+                // 正常显示内容 (根据当前屏幕决定)
+                uiState.currentWord != null -> {
+                    // --- 手势处理 (恢复垂直滑动) ---
+                    var dragAmountX by remember { mutableStateOf(0f) }
+                    var dragAmountY by remember { mutableStateOf(0f) }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            // Key by current word AND screen to reset gestures correctly
+                            .pointerInput(uiState.currentWordInBatchIndex, uiState.currentScreen) {
+                                detectDragGestures(
+                                    onDragStart = { dragAmountX = 0f; dragAmountY = 0f },
+                                    onDragEnd = {
+                                        val absX = abs(dragAmountX)
+                                        val absY = abs(dragAmountY)
+                                        val dragThreshold = 75f
 
-                                    if (absX > absY) { // 水平滑动为主
-                                        if (dragAmountX < -dragThreshold) { // 左滑
-                                            when (uiState.currentScreen) {
-                                                is Screen.WordScreen -> onPreviousWord() // 修改：左滑切换到上一个单词
-                                                is Screen.SentencesScreen -> onNextSentence()
-                                                is Screen.RootScreen -> onNavigateToScreen(Screen.PhrasesScreen) // 从词根左滑到词组
-                                                else -> {} // 词组页面等暂时不支持左滑
+                                        if (absX > absY) { // 水平滑动为主
+                                            if (dragAmountX < -dragThreshold) { // 左滑
+                                                when (uiState.currentScreen) {
+                                                    is Screen.WordScreen -> onPreviousWord() // 修改：左滑切换到上一个单词
+                                                    is Screen.SentencesScreen -> onNextSentence()
+                                                    is Screen.RootScreen -> onNavigateToScreen(Screen.PhrasesScreen) // 从词根左滑到词组
+                                                    else -> {} // 词组页面等暂时不支持左滑
+                                                }
+                                            } else if (dragAmountX > dragThreshold) { // 右滑
+                                                 when (uiState.currentScreen) {
+                                                    is Screen.WordScreen -> onNextWord() // 修改：右滑切换到下一个单词
+                                                    is Screen.SentencesScreen -> onPreviousSentence()
+                                                    is Screen.PhrasesScreen -> onNavigateToScreen(Screen.RootScreen) // 从词组右滑回词根
+                                                    else -> {} // 根屏幕等暂时不支持右滑
+                                                }
                                             }
-                                        } else if (dragAmountX > dragThreshold) { // 右滑
-                                             when (uiState.currentScreen) {
-                                                is Screen.WordScreen -> onNextWord() // 修改：右滑切换到下一个单词
-                                                is Screen.SentencesScreen -> onPreviousSentence()
-                                                is Screen.PhrasesScreen -> onNavigateToScreen(Screen.RootScreen) // 从词组右滑回词根
-                                                else -> {} // 根屏幕等暂时不支持右滑
+                                        } else { // 垂直滑动为主
+                                             if (dragAmountY < -dragThreshold) { // 上滑
+                                                when (uiState.currentScreen) {
+                                                    is Screen.WordScreen -> onNavigateToScreen(Screen.RootScreen) // 从单词上滑到词根
+                                                    else -> onNavigateToScreen(Screen.WordScreen) // 其他屏幕上滑返回单词主页
+                                                }
+                                            } else if (dragAmountY > dragThreshold) { // 下滑
+                                                 when (uiState.currentScreen) {
+                                                    is Screen.WordScreen -> onNavigateToScreen(Screen.SentencesScreen(0)) // 下滑到第一条例句
+                                                    else -> onNavigateToScreen(Screen.WordScreen) // 其他屏幕下滑返回单词主页
+                                                }
                                             }
                                         }
-                                    } else { // 垂直滑动为主
-                                         if (dragAmountY < -dragThreshold) { // 上滑
-                                            when (uiState.currentScreen) {
-                                                is Screen.WordScreen -> onNavigateToScreen(Screen.RootScreen) // 从单词上滑到词根
-                                                else -> onNavigateToScreen(Screen.WordScreen) // 其他屏幕上滑返回单词主页
-                                            }
-                                        } else if (dragAmountY > dragThreshold) { // 下滑
-                                             when (uiState.currentScreen) {
-                                                is Screen.WordScreen -> onNavigateToScreen(Screen.SentencesScreen(0)) // 下滑到第一条例句
-                                                else -> onNavigateToScreen(Screen.WordScreen) // 其他屏幕下滑返回单词主页
-                                            }
-                                        }
+                                        // 重置拖动距离
+                                        dragAmountX = 0f
+                                        dragAmountY = 0f
+                                    },
+                                    onDrag = { change, drag ->
+                                        // 累积拖动距离
+                                        dragAmountX += drag.x
+                                        dragAmountY += drag.y
+                                        change.consume()
                                     }
-                                    // 重置拖动距离
-                                    dragAmountX = 0f
-                                    dragAmountY = 0f
-                                },
-                                onDrag = { change, drag ->
-                                    // 累积拖动距离
-                                    dragAmountX += drag.x
-                                    dragAmountY += drag.y
-                                    change.consume()
-                                }
-                            )
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    // --- 根据当前屏幕显示不同的 Card --- 
-                    when (val screen = uiState.currentScreen) {
-                        is Screen.WordScreen -> {
-                            WordCard(
-                                word = uiState.currentWord,
-                                isMeaningHidden = uiState.isCurrentWordMeaningHidden,
-                                playWordAudio = playWordAudio,
-                                onRemembered = onRemembered,
-                                onForgotten = onForgotten,
-                                memoryLevel = uiState.currentWordMemoryLevel
-                            )
-                        }
-                        is Screen.SentencesScreen -> {
-                            SentenceCard(
-                                sentences = uiState.currentWord?.sentences ?: emptyList(), // Safe call
-                                currentIndex = screen.sentenceIndex
-                            )
-                        }
-                        is Screen.RootScreen -> { // 恢复 RootScreen
-                            RootCard(rootInfo = uiState.currentWord?.rootInfo) // 只传递 rootInfo
-                        }
-                        is Screen.PhrasesScreen -> { // 新增：处理词组屏幕
-                            PhrasesCard(phrases = uiState.currentWord?.phrases)
+                                )
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // --- 根据当前屏幕显示不同的 Card --- 
+                        when (val screen = uiState.currentScreen) {
+                            is Screen.WordScreen -> {
+                                WordCard(
+                                    word = uiState.currentWord,
+                                    isMeaningHidden = uiState.isCurrentWordMeaningHidden,
+                                    playWordAudio = playWordAudio,
+                                    onRemembered = onRemembered,
+                                    onForgotten = onForgotten,
+                                    memoryLevel = uiState.currentWordMemoryLevel
+                                )
+                            }
+                            is Screen.SentencesScreen -> {
+                                SentenceCard(
+                                    sentences = uiState.currentWord?.sentences ?: emptyList(), // Safe call
+                                    currentIndex = screen.sentenceIndex
+                                )
+                            }
+                            is Screen.RootScreen -> { // 恢复 RootScreen
+                                RootCard(rootInfo = uiState.currentWord?.rootInfo) // 只传递 rootInfo
+                            }
+                            is Screen.PhrasesScreen -> { // 新增：处理词组屏幕
+                                PhrasesCard(phrases = uiState.currentWord?.phrases)
+                            }
                         }
                     }
                 }
+                // 无单词可显示（初始状态或异常）
+                else -> {
+                     Text("没有可显示的单词", style = MaterialTheme.typography.title3)
+                }
             }
-            // 无单词可显示（初始状态或异常）
-            else -> {
-                 Text("没有可显示的单词", style = MaterialTheme.typography.title3)
+        }
+    }
+}
+
+/**
+ * 微光模式下的简化屏幕，显示最小核心信息以节省电量
+ * 
+ * @param currentWord 当前显示的单词
+ */
+@Composable
+fun AmbientModeScreen(currentWord: Word?) {
+    // 使用黑色背景和低亮度文字来节省电量
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+        if (currentWord != null) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(16.dp)
+            ) {
+                // 只显示单词，使用灰色文字以节省电量
+                Text(
+                    text = currentWord.word,
+                    style = MaterialTheme.typography.title2,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center
+                )
+                
+                // 可选：显示简短的音标（如果显示音标对用户有帮助）
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = currentWord.phonetic,
+                    style = MaterialTheme.typography.body2,
+                    color = Color.DarkGray,
+                    textAlign = TextAlign.Center
+                )
+                
+                // 不显示释义、按钮或其他元素以节省电量
             }
+        } else {
+            // 如果没有单词，显示简单的占位符
+            Text(
+                text = "单词学习",
+                style = MaterialTheme.typography.title3,
+                color = Color.Gray,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
